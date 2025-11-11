@@ -1,7 +1,10 @@
 {
-  "name": "app",
+  "name": "p2p-file-share",
   "private": true,
   "scripts": {
+    "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
+    "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
@@ -28,7 +31,8 @@
     "tailwindcss-animate": "1.0.7",
     "ts-node": "10.9.2",
     "tsx": "4.20.3",
-    "typescript": "5.2.2"
+    "typescript": "5.2.2",
+    "wrangler": "^4.47.0"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",
@@ -37,6 +41,7 @@
     "@headlessui/react": "1.7.18",
     "@hookform/resolvers": "3.9.0",
     "@next-auth/prisma-adapter": "1.0.7",
+    "@opennextjs/cloudflare": "^1.12.0",
     "@prisma/client": "6.7.0",
     "@radix-ui/react-accordion": "1.2.0",
     "@radix-ui/react-alert-dialog": "1.1.1",
