@@ -4,7 +4,6 @@ import { useState, useEffect, useCallback } from "react";
 import PeerManager, { ConnectionState } from "@/services/peer-manager";
 import { LogEntry } from "@/components/connection-logger";
 
-
 interface FileTransfer {
   id: string;
   name: string;

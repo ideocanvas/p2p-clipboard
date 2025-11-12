@@ -1,28 +1,60 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowLeft, Upload } from "lucide-react";
 import Link from "next/link";
 import { ConnectionStatus } from "@/components/connection-status";
 import { ConnectionLogger, LogEntry } from "@/components/connection-logger";
-import { useWebRTC } from "@/hooks/use-webrtc";
+import PeerManager, { ConnectionState, FileTransfer } from "@/services/peer-manager";
 
 function SendPageContent() {
   const searchParams = useSearchParams();
   const sessionId = searchParams?.get("session");
   const [manualCode, setManualCode] = useState<string>("");
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [connectionState, setConnectionState] = useState<ConnectionState>("waiting");
+  const [files, setFiles] = useState<FileTransfer[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [verificationCode, setVerificationCode] = useState<string | null>(null);
+  const [isVerified, setIsVerified] = useState(false);
 
   const handleLog = (log: LogEntry) => {
     setLogs((prev) => [...prev, log]);
   };
 
-  const { connectionState, files, error, currentStrategy, sendFiles, verificationCode, isVerified } = useWebRTC({
-    role: "sender",
-    sessionId: sessionId || "",
-    onLog: handleLog,
-  })
+  useEffect(() => {
+    if (!sessionId) return;
+
+    const peerManager = PeerManager.getInstance();
+    
+    // Subscribe to state changes
+    const unsubscribe = peerManager.subscribe({
+      onConnectionStateChange: (state: ConnectionState) => {
+        setConnectionState(state);
+        
+        // Update other state from peer manager
+        const managerState = peerManager.getState();
+        setFiles(managerState.files);
+        setError(managerState.error);
+        setVerificationCode(managerState.verificationCode);
+        setIsVerified(managerState.isVerified);
+      },
+      onLog: handleLog,
+    });
+
+    // Initialize connection as sender
+    peerManager.connect("sender", sessionId).then((id) => {
+      console.log("Sender connected with peer ID:", id);
+    }).catch((err) => {
+      console.error("Failed to connect as sender:", err);
+      setError("Failed to connect to receiver");
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, [sessionId]);
 
   const handleManualCodeSubmit = () => {
     if (manualCode.trim()) {
@@ -34,7 +66,8 @@ function SendPageContent() {
     const fileList = event.target.files;
     if (fileList && fileList.length > 0) {
       const filesArray = Array.from(fileList);
-      await sendFiles(filesArray);
+      const peerManager = PeerManager.getInstance();
+      await peerManager.sendFiles(filesArray);
     }
   };
 
@@ -46,7 +79,7 @@ function SendPageContent() {
             <Upload className="w-16 h-16 text-green-600 mx-auto mb-4" />
             <h2 className="text-2xl font-bold text-gray-900 mb-4">Connect to Receiver</h2>
             <p className="text-gray-600 mb-8">
-              Enter the connection code shown on the receiver&apos;s device
+              Enter the connection code shown on the receiver's device
             </p>
 
             <div className="max-w-md mx-auto">
@@ -103,16 +136,9 @@ function SendPageContent() {
           </div>
         )}
 
-        {currentStrategy && (
-          <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm">
-            <strong>Connection Method:</strong>{" "}
-            {currentStrategy === "webrtc-peerjs"
-              ? "WebRTC (PeerJS)"
-              : currentStrategy === "webrtc-custom"
-              ? "WebRTC (Custom)"
-              : "Server Relay"}
-          </div>
-        )}
+        <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm">
+          <strong>Connection Method:</strong> WebRTC (PeerJS)
+        </div>
 
         {/* Connecting */}
         {connectionState === "connecting" && (
@@ -131,7 +157,7 @@ function SendPageContent() {
               <p className="text-gray-600 mb-6">
                 Please share this code with the receiver for verification:
               </p>
-              <div className="bg-white border-4 border-yellow-400 rounded-lg p-6 mb-6">
+              <div className="bg-white border-4 border-yellow-400 rounded-lg p-6 mb-4">
                 <div className="text-4xl font-bold text-gray-900 tracking-widest">
                   {verificationCode ? (
                     verificationCode
@@ -140,6 +166,13 @@ function SendPageContent() {
                   )}
                 </div>
               </div>
+              {verificationCode && (
+                <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg">
+                  <p className="text-sm text-green-700">
+                    ✅ Verification code sent to receiver. Waiting for them to enter it...
+                  </p>
+                </div>
+              )}
               <p className="text-sm text-gray-600">
                 The receiver must enter this code to establish a secure connection
               </p>

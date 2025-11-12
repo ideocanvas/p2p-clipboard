@@ -1,26 +1,25 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { ArrowLeft, Smartphone, Shield, Clock } from "lucide-react";
+import { ArrowLeft, Smartphone, Shield, Clock, Copy } from "lucide-react";
 import Link from "next/link";
 import { QRCodeGenerator } from "@/components/qr-code-generator";
 import { ConnectionStatus } from "@/components/connection-status";
 import { ConnectionLogger, LogEntry } from "@/components/connection-logger";
-import { useWebRTC } from "@/hooks/use-webrtc";
 import { toast } from "sonner";
+import PeerManager, { ConnectionState, FileTransfer } from "@/services/peer-manager";
 
 export default function ReceivePage() {
-  const [sessionId, setSessionId] = useState<string>("");
+  const [peerId, setPeerId] = useState<string>("");
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [receivedFiles, setReceivedFiles] = useState<Array<{ name: string; blob: Blob }>>([]);
   const [enteredCode, setEnteredCode] = useState<string>("");
-
-  // Generate session ID on client side only to avoid hydration mismatch
-  useEffect(() => {
-    if (!sessionId) {
-      setSessionId(Math.random().toString(36).substr(2, 9));
-    }
-  }, [sessionId]);
+  const [connectionState, setConnectionState] = useState<ConnectionState>("waiting");
+  const [files, setFiles] = useState<FileTransfer[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [verificationCode, setVerificationCode] = useState<string | null>(null);
+  const [isVerified, setIsVerified] = useState(false);
+  const [copySuccess, setCopySuccess] = useState(false);
 
   const handleLog = (log: LogEntry) => {
     setLogs((prev) => [...prev, log]);
@@ -39,16 +38,48 @@ export default function ReceivePage() {
     URL.revokeObjectURL(url);
   };
 
-  const { connectionState, files, error, currentStrategy, verificationCode, isVerified, submitVerificationCode } = useWebRTC({
-    role: "receiver",
-    sessionId,
-    onFileReceived: handleFileReceived,
-    onLog: handleLog,
-  })
+  useEffect(() => {
+    const peerManager = PeerManager.getInstance();
+    
+    // Subscribe to state changes
+    const unsubscribe = peerManager.subscribe({
+      onConnectionStateChange: (state: ConnectionState) => {
+        setConnectionState(state);
+        
+        // Update other state from peer manager
+        const managerState = peerManager.getState();
+        setFiles(managerState.files);
+        setError(managerState.error);
+        setVerificationCode(managerState.verificationCode);
+        setIsVerified(managerState.isVerified);
+        
+        // Update peer ID when available
+        if (managerState.peerId && !peerId) {
+          setPeerId(managerState.peerId);
+        }
+      },
+      onFileReceived: handleFileReceived,
+      onLog: handleLog,
+    });
+
+    // Initialize connection as receiver
+    peerManager.connect("receiver", "").then((id) => {
+      console.log("Receiver connected with peer ID:", id);
+      setPeerId(id);
+    }).catch((err) => {
+      console.error("Failed to connect as receiver:", err);
+      setError("Failed to initialize connection");
+    });
+
+    return () => {
+      unsubscribe();
+    };
+  }, []);
 
   const handleVerificationSubmit = () => {
     if (enteredCode.trim().length === 6) {
-      const success = submitVerificationCode(enteredCode.trim());
+      const peerManager = PeerManager.getInstance();
+      const success = peerManager.submitVerificationCode(enteredCode.trim());
       if (!success) {
         toast.error("Failed to submit verification code");
       }
@@ -57,7 +88,18 @@ export default function ReceivePage() {
     }
   }
 
-  const connectionUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/send?session=${sessionId}`;
+  const connectionUrl = `${typeof window !== "undefined" ? window.location.origin : ""}/send?session=${peerId}`;
+
+  const handleCopyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(connectionUrl);
+      setCopySuccess(true);
+      setTimeout(() => setCopySuccess(false), 2000);
+      toast.success("Link copied to clipboard!");
+    } catch (err) {
+      toast.error("Failed to copy link");
+    }
+  };
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-green-50">
@@ -95,19 +137,17 @@ export default function ReceivePage() {
                   </div>
                 )}
 
-                {currentStrategy && (
-                  <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm">
-                    <strong>Connection Method:</strong> {currentStrategy === "webrtc-peerjs" ? "WebRTC (PeerJS)" : currentStrategy === "webrtc-custom" ? "WebRTC (Custom)" : "Server Relay"}
-                  </div>
-                )}
+                <div className="mb-4 p-3 bg-blue-50 border border-blue-200 rounded-lg text-blue-700 text-sm">
+                  <strong>Connection Method:</strong> WebRTC (PeerJS)
+                </div>
 
                 {/* Waiting for connection */}
                 {(connectionState === "waiting" || connectionState === "connecting") && (
                   <div className="text-center">
-                    {!sessionId ? (
+                    {!peerId ? (
                       <div className="text-center py-8">
                         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto mb-4"></div>
-                        <p className="text-gray-600">Initializing...</p>
+                        <p className="text-gray-600">Initializing connection...</p>
                       </div>
                     ) : (
                       <>
@@ -125,13 +165,28 @@ export default function ReceivePage() {
                           <QRCodeGenerator url={connectionUrl} />
                         </div>
 
+                        {/* Copy Link Button */}
+                        <div className="max-w-md mx-auto mb-6">
+                          <button
+                            onClick={handleCopyLink}
+                            disabled={!peerId}
+                            className="w-full flex items-center justify-center space-x-2 bg-blue-600 text-white px-4 py-3 rounded-lg font-semibold hover:bg-blue-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            <Copy className="w-4 h-4" />
+                            <span>{copySuccess ? "Copied!" : "Copy Link"}</span>
+                          </button>
+                          <p className="text-xs text-gray-600 text-center mt-2">
+                            Copy this link to send to the sender
+                          </p>
+                        </div>
+
                         <div className="bg-gradient-to-r from-blue-50 to-green-50 rounded-lg p-6 mb-6">
                           <p className="text-sm font-semibold text-gray-700 mb-3 text-center">
                             Connection Code
                           </p>
                           <div className="bg-white border-2 border-blue-300 rounded-lg p-4 mb-3">
                             <p className="text-3xl font-bold text-center font-mono tracking-wider text-blue-600">
-                              {sessionId.toUpperCase()}
+                              {peerId ? peerId.toUpperCase() : "Connecting..."}
                             </p>
                           </div>
                           <p className="text-xs text-gray-600 text-center">
@@ -163,42 +218,39 @@ export default function ReceivePage() {
                         Verification Required
                       </h2>
 
-                      {verificationCode ? (
-                        <>
-                          <p className="text-gray-600 mb-6">
-                            Please enter the 6-digit verification code shown on the sender's device:
-                          </p>
-                          <div className="mb-6">
-                            <input
-                              type="text"
-                              value={enteredCode}
-                              onChange={(e) => {
-                                const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-                                setEnteredCode(value);
-                              }}
-                              placeholder="000000"
-                              maxLength={6}
-                              className="w-full px-4 py-4 text-center text-4xl font-bold font-mono tracking-widest border-2 border-yellow-400 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
-                            />
+                      <p className="text-gray-600 mb-6">
+                        Please enter the 6-digit verification code shown on the sender's device:
+                      </p>
+                      
+                      {verificationCode && (
+                        <div className="mb-4 p-4 bg-white border-2 border-yellow-400 rounded-lg">
+                          <p className="text-sm text-gray-600 mb-2">Sender's verification code:</p>
+                          <div className="text-2xl font-bold font-mono tracking-widest text-yellow-600">
+                            {verificationCode}
                           </div>
-                          <button
-                            onClick={handleVerificationSubmit}
-                            disabled={enteredCode.length !== 6}
-                            className="w-full bg-yellow-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-yellow-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                          >
-                            Verify Connection
-                          </button>
-                        </>
-                      ) : (
-                        <>
-                          <p className="text-gray-600 mb-6">
-                            Waiting for verification code from sender...
-                          </p>
-                          <div className="animate-pulse text-gray-400 text-lg mb-6">
-                            Please wait while the sender generates the code
-                          </div>
-                        </>
+                        </div>
                       )}
+                      
+                      <div className="mb-6">
+                        <input
+                          type="text"
+                          value={enteredCode}
+                          onChange={(e) => {
+                            const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                            setEnteredCode(value);
+                          }}
+                          placeholder="000000"
+                          maxLength={6}
+                          className="w-full px-4 py-4 text-center text-4xl font-bold font-mono tracking-widest border-2 border-yellow-400 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                        />
+                      </div>
+                      <button
+                        onClick={handleVerificationSubmit}
+                        disabled={enteredCode.length !== 6}
+                        className="w-full bg-yellow-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-yellow-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        Verify Connection
+                      </button>
 
                       <p className="text-sm text-gray-600 mt-4">
                         This ensures you're connecting to the right sender

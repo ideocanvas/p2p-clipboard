@@ -1,6 +1,6 @@
 
-// Connection strategies configuration
-export type ConnectionStrategy = "webrtc-peerjs" | "webrtc-custom" | "server-relay";
+// WebRTC configuration for PeerJS
+export type ConnectionStrategy = "webrtc-peerjs";
 
 export interface STUNTURNConfig {
   urls: string | string[];
@@ -54,15 +54,5 @@ export const STRATEGY_CONFIG = {
     name: "WebRTC (PeerJS)",
     timeout: 15000, // 15 seconds
     description: "Using PeerJS cloud signaling with STUN/TURN",
-  },
-  "webrtc-custom": {
-    name: "WebRTC (Custom)",
-    timeout: 15000,
-    description: "Direct WebRTC with server signaling",
-  },
-  "server-relay": {
-    name: "Server Relay",
-    timeout: 10000,
-    description: "File transfer through server",
   },
 };
