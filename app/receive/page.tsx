@@ -162,31 +162,46 @@ export default function ReceivePage() {
                       <h2 className="text-2xl font-bold text-gray-900 mb-4">
                         Verification Required
                       </h2>
-                      <p className="text-gray-600 mb-6">
-                        Please enter the 6-digit verification code shown on the sender&apos;s device:
-                      </p>
-                      <div className="mb-6">
-                        <input
-                          type="text"
-                          value={enteredCode}
-                          onChange={(e) => {
-                            const value = e.target.value.replace(/\D/g, '').slice(0, 6);
-                            setEnteredCode(value);
-                          }}
-                          placeholder="000000"
-                          maxLength={6}
-                          className="w-full px-4 py-4 text-center text-4xl font-bold font-mono tracking-widest border-2 border-yellow-400 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
-                        />
-                      </div>
-                      <button
-                        onClick={handleVerificationSubmit}
-                        disabled={enteredCode.length !== 6}
-                        className="w-full bg-yellow-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-yellow-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        Verify Connection
-                      </button>
+
+                      {verificationCode ? (
+                        <>
+                          <p className="text-gray-600 mb-6">
+                            Please enter the 6-digit verification code shown on the sender's device:
+                          </p>
+                          <div className="mb-6">
+                            <input
+                              type="text"
+                              value={enteredCode}
+                              onChange={(e) => {
+                                const value = e.target.value.replace(/\D/g, '').slice(0, 6);
+                                setEnteredCode(value);
+                              }}
+                              placeholder="000000"
+                              maxLength={6}
+                              className="w-full px-4 py-4 text-center text-4xl font-bold font-mono tracking-widest border-2 border-yellow-400 rounded-lg focus:ring-2 focus:ring-yellow-500 focus:border-yellow-500"
+                            />
+                          </div>
+                          <button
+                            onClick={handleVerificationSubmit}
+                            disabled={enteredCode.length !== 6}
+                            className="w-full bg-yellow-600 text-white px-6 py-3 rounded-lg font-semibold hover:bg-yellow-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                          >
+                            Verify Connection
+                          </button>
+                        </>
+                      ) : (
+                        <>
+                          <p className="text-gray-600 mb-6">
+                            Waiting for verification code from sender...
+                          </p>
+                          <div className="animate-pulse text-gray-400 text-lg mb-6">
+                            Please wait while the sender generates the code
+                          </div>
+                        </>
+                      )}
+
                       <p className="text-sm text-gray-600 mt-4">
-                        This ensures you&apos;re connecting to the right sender
+                        This ensures you're connecting to the right sender
                       </p>
                     </div>
                   </div>
@@ -208,7 +223,7 @@ export default function ReceivePage() {
                             className="border rounded-lg p-4 bg-gray-50"
                           >
                             <div className="flex justify-between items-center mb-2">
-                              <span className="font-medium">{file.name}</span>
+                              <span className="font-medium truncate">{file.name}</span>
                               <span className="text-sm text-gray-500">
                                 {(file.size / 1024 / 1024).toFixed(2)} MB
                               </span>

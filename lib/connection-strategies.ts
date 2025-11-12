@@ -8,29 +8,44 @@ export interface STUNTURNConfig {
   credential?: string;
 }
 
-// Free public STUN/TURN servers
+// Free public STUN/TURN servers - optimized for reliability
 export const ICE_SERVERS: RTCIceServer[] = [
-  // Google's public STUN servers
+  // Primary STUN servers (Google's reliable servers)
   { urls: "stun:stun.l.google.com:19302" },
   { urls: "stun:stun1.l.google.com:19302" },
   { urls: "stun:stun2.l.google.com:19302" },
   { urls: "stun:stun3.l.google.com:19302" },
   { urls: "stun:stun4.l.google.com:19302" },
 
-  // More reliable STUN servers
+  // Backup STUN servers
   { urls: "stun:stun.voipbuster.com:3478" },
   { urls: "stun:stun.voipstunt.com:3478" },
+  { urls: "stun:stun.ideasip.com" },
+  { urls: "stun:stun.sipgate.net:3478" },
 
-  // Free TURN servers (may be unreliable)
+  // More reliable TURN servers
   {
-    urls: "turn:numb.viagenie.ca",
-    username: "webrtc@live.com",
-    credential: "muazkh",
+    urls: [
+      "turn:openrelay.metered.ca:80",
+      "turn:openrelay.metered.ca:443",
+      "turn:openrelay.metered.ca:443?transport=tcp"
+    ],
+    username: "openrelayproject",
+    credential: "openrelayproject",
   },
   {
-    urls: "turn:turn.bistri.com:80",
-    username: "homeo",
-    credential: "homeo",
+    urls: [
+      "turn:relay.metered.ca:80",
+      "turn:relay.metered.ca:443",
+      "turn:relay.metered.ca:443?transport=tcp"
+    ],
+    username: "free",
+    credential: "free",
+  },
+  {
+    urls: "turn:turn.anyfirewall.com:443?transport=tcp",
+    username: "webrtc",
+    credential: "webrtc",
   },
 ];
 

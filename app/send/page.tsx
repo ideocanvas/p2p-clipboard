@@ -124,7 +124,7 @@ function SendPageContent() {
         )}
 
         {/* Verifying */}
-        {connectionState === "verifying" && verificationCode && (
+        {connectionState === "verifying" && (
           <div className="text-center py-8">
             <div className="max-w-md mx-auto bg-yellow-50 border-2 border-yellow-300 rounded-lg p-8">
               <h2 className="text-2xl font-bold text-gray-900 mb-4">Verification Required</h2>
@@ -132,8 +132,12 @@ function SendPageContent() {
                 Please share this code with the receiver for verification:
               </p>
               <div className="bg-white border-4 border-yellow-400 rounded-lg p-6 mb-6">
-                <div className="text-6xl font-bold text-gray-900 tracking-widest">
-                  {verificationCode}
+                <div className="text-4xl font-bold text-gray-900 tracking-widest">
+                  {verificationCode ? (
+                    verificationCode
+                  ) : (
+                    <div className="animate-pulse text-gray-400">Generating...</div>
+                  )}
                 </div>
               </div>
               <p className="text-sm text-gray-600">
@@ -170,7 +174,7 @@ function SendPageContent() {
                 {files.map((file) => (
                   <div key={file.id} className="border rounded-lg p-4 bg-gray-50">
                     <div className="flex justify-between items-center mb-2">
-                      <span className="font-medium">{file.name}</span>
+                      <span className="font-medium truncate">{file.name}</span>
                       <span className="text-sm text-gray-500">
                         {(file.size / 1024 / 1024).toFixed(2)} MB
                       </span>

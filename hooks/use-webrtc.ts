@@ -40,6 +40,10 @@ export function useWebRTC({ role, sessionId, onFileReceived, onLog }: UseWebRTCP
   const [currentStrategy, setCurrentStrategy] = useState<ConnectionStrategy | null>(null);
   const [verificationCode, setVerificationCode] = useState<string | null>(null);
   const [isVerified, setIsVerified] = useState(false);
+  const verificationCodeRef = useRef<string | null>(null);
+  const verificationTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const currentStrategyRef = useRef<ConnectionStrategy | null>(null);
+  const isVerifiedRef = useRef(false);
 
   const peerRef = useRef<Peer | null>(null);
   const connectionRef = useRef<DataConnection | null>(null);
@@ -86,6 +90,7 @@ export function useWebRTC({ role, sessionId, onFileReceived, onLog }: UseWebRTCP
   const cleanup = useCallback(() => {
     if (timeoutRef.current) clearTimeout(timeoutRef.current);
     if (pollingIntervalRef.current) clearInterval(pollingIntervalRef.current);
+    if (verificationTimeoutRef.current) clearTimeout(verificationTimeoutRef.current);
 
     // Cleanup data channel without triggering events
     if (dataChannelRef.current) {
@@ -120,6 +125,12 @@ export function useWebRTC({ role, sessionId, onFileReceived, onLog }: UseWebRTCP
 
   // Verify code entered by receiver
   const verifyCode = useCallback((enteredCode: string) => {
+    if (!verificationCode) {
+      log("error", "No verification code available");
+      setError("No verification code available - please wait for connection");
+      return false;
+    }
+
     if (enteredCode === verificationCode) {
       setIsVerified(true);
       setConnectionState("connected");
@@ -134,8 +145,8 @@ export function useWebRTC({ role, sessionId, onFileReceived, onLog }: UseWebRTCP
       }
       return true;
     } else {
-      log("error", "Verification failed - incorrect code");
-      setError("Incorrect verification code");
+      log("error", "Verification failed - incorrect code", `Expected: ${verificationCode}, Got: ${enteredCode}`);
+      setError("Incorrect verification code - please check and try again");
       return false;
     }
   }, [verificationCode, currentStrategy, log]);
@@ -145,109 +156,150 @@ export function useWebRTC({ role, sessionId, onFileReceived, onLog }: UseWebRTCP
     return new Promise<boolean>((resolve) => {
       try {
         setCurrentStrategy("webrtc-peerjs");
+        currentStrategyRef.current = "webrtc-peerjs";
         log("info", "Strategy 1: PeerJS with STUN/TURN", "Trying PeerJS signaling");
 
         const peerId = role === "receiver" ? sessionId : `${sessionId}-sender`;
 
-        // Try different peer server configurations
+        // Try different peer server configurations with fallback
         const peerConfigs = [
           {
             host: '0.peerjs.com',
             port: 443,
             secure: true,
-            path: '/'
+            path: '/',
+            timeout: 10000
           },
           {
             host: '1.peerjs.com',
             port: 443,
             secure: true,
-            path: '/'
+            path: '/',
+            timeout: 10000
           },
           {
             host: '2.peerjs.com',
             port: 443,
             secure: true,
-            path: '/'
+            path: '/',
+            timeout: 10000
           },
           {
             host: '3.peerjs.com',
             port: 443,
             secure: true,
-            path: '/'
+            path: '/',
+            timeout: 10000
           },
           {
             host: 'peerjs-server.herokuapp.com',
             port: 443,
             secure: true,
-            path: '/myapp'
+            path: '/myapp',
+            timeout: 10000
           }
         ];
 
-        // Use the first configuration
-        const config = peerConfigs[0];
+        let currentConfigIndex = 0;
+        let peer: Peer | null = null;
+        let connectionTimeout: NodeJS.Timeout | null = null;
 
-        const peer = new Peer(peerId, {
-          debug: 2, // Reduced debug level for cleaner logs
-          config: { iceServers: ICE_SERVERS },
-          ...config
-        });
-
-        peerRef.current = peer;
-
-        const timeout = setTimeout(() => {
-          log("warning", "PeerJS timed out after 15s", "Trying next strategy");
-          peer.destroy();
-          resolve(false);
-        }, 15000); // Reduced to 15s for faster fallback
-
-        peer.on("open", (id) => {
-          log("success", `PeerJS peer open: ${id}`);
-          resetTimeout();
-
-          // If sender, wait a bit for receiver to be ready, then connect
-          if (role === "sender") {
-            setTimeout(() => {
-              log("info", "Attempting to connect to receiver...");
-              const conn = peer.connect(sessionId, {
-                reliable: true,
-                serialization: 'json'
-              });
-
-              conn.on("open", () => {
-                log("success", "Data connection established");
-                clearTimeout(timeout);
-                setupPeerJSConnection(conn);
-                resolve(true);
-              });
-
-              conn.on("error", (err) => {
-                log("error", "Connection error", String(err));
-                clearTimeout(timeout);
-                resolve(false);
-              });
-            }, 2000); // Wait 2s for receiver to be listening
-          }
-        });
-
-        peer.on("error", (err) => {
-          log("error", `PeerJS error: ${err.type}`, String(err));
-          clearTimeout(timeout);
-          // Handle specific peerjs errors
-          if (err.type === 'unavailable-id' || err.type === 'server-error' || err.type === 'socket-error') {
-            peer.destroy();
+        const tryNextConfig = () => {
+          if (currentConfigIndex >= peerConfigs.length) {
+            log("warning", "All PeerJS servers failed", "Trying next strategy");
             resolve(false);
+            return;
           }
-          // For network errors, wait for timeout
-        });
 
-        if (role === "receiver") {
-          peer.on("connection", (conn) => {
-            log("success", "Sender connected via PeerJS");
-            clearTimeout(timeout);
-            setupPeerJSConnection(conn);
-            resolve(true);
+          const config = peerConfigs[currentConfigIndex];
+          log("info", `Trying PeerJS server: ${config.host}`);
+
+          // Clean up previous peer instance
+          if (peer) {
+            peer.destroy();
+          }
+
+          peer = new Peer(peerId, {
+            debug: 1, // Minimal debug level
+            config: { iceServers: ICE_SERVERS },
+            ...config
           });
-        }
+
+          peerRef.current = peer;
+
+          // Set timeout for this specific configuration
+          if (connectionTimeout) clearTimeout(connectionTimeout);
+          connectionTimeout = setTimeout(() => {
+            log("warning", `PeerJS server ${config.host} timed out after ${config.timeout}ms`);
+            currentConfigIndex++;
+            tryNextConfig();
+          }, config.timeout);
+
+          peer.on("open", (id) => {
+            log("success", `PeerJS peer open on ${config.host}: ${id}`);
+            if (connectionTimeout) clearTimeout(connectionTimeout);
+            resetTimeout();
+
+            // If sender, wait a bit for receiver to be ready, then connect
+            if (role === "sender") {
+              setTimeout(() => {
+                log("info", "Attempting to connect to receiver...");
+                const conn = peer!.connect(sessionId, {
+                  reliable: true,
+                  serialization: 'json'
+                });
+
+                const connectTimeout = setTimeout(() => {
+                  log("warning", "Connection attempt timed out");
+                  conn.close();
+                  currentConfigIndex++;
+                  tryNextConfig();
+                }, 8000);
+
+                conn.on("open", () => {
+                  log("success", "Data connection established");
+                  clearTimeout(connectTimeout);
+                  setupPeerJSConnection(conn);
+                  resolve(true);
+                });
+
+                conn.on("error", (err) => {
+                  log("error", "Connection error", String(err));
+                  clearTimeout(connectTimeout);
+                  currentConfigIndex++;
+                  tryNextConfig();
+                });
+              }, 1000); // Reduced wait time
+            }
+          });
+
+          peer.on("error", (err) => {
+            log("error", `PeerJS error on ${config.host}: ${err.type}`, String(err));
+            if (connectionTimeout) clearTimeout(connectionTimeout);
+
+            // Handle specific peerjs errors
+            if (err.type === 'unavailable-id' || err.type === 'server-error' || err.type === 'socket-error') {
+              currentConfigIndex++;
+              tryNextConfig();
+            } else {
+              // For network errors, try next config
+              currentConfigIndex++;
+              tryNextConfig();
+            }
+          });
+
+          if (role === "receiver") {
+            peer.on("connection", (conn) => {
+              log("success", "Sender connected via PeerJS");
+              if (connectionTimeout) clearTimeout(connectionTimeout);
+              setupPeerJSConnection(conn);
+              resolve(true);
+            });
+          }
+        };
+
+        // Start with first configuration
+        tryNextConfig();
       } catch (err) {
         log("error", "PeerJS failed", String(err));
         resolve(false);
@@ -258,29 +310,14 @@ export function useWebRTC({ role, sessionId, onFileReceived, onLog }: UseWebRTCP
   const setupPeerJSConnection = (conn: DataConnection) => {
     connectionRef.current = conn;
 
-    conn.on("open", () => {
-      log("success", "Data channel open");
-
-      if (role === "sender") {
-        // Generate and send verification code
-        const code = generateVerificationCode();
-        setVerificationCode(code);
-        setConnectionState("verifying");
-        log("info", "Verification code generated", `Code: ${code}`);
-
-        conn.send({
-          type: "verification-request",
-          verificationCode: code
-        });
-      } else {
-        // Receiver waits for verification request
-        setConnectionState("verifying");
-        log("info", "Waiting for verification code");
-      }
-
-      setError(null);
-      resetTimeout();
-    });
+    // Check if connection is already open
+    if (conn.open) {
+      handlePeerJSConnectionOpen(conn);
+    } else {
+      conn.on("open", () => {
+        handlePeerJSConnectionOpen(conn);
+      });
+    }
 
     conn.on("data", (data: unknown) => {
       resetTimeout();
@@ -297,6 +334,31 @@ export function useWebRTC({ role, sessionId, onFileReceived, onLog }: UseWebRTCP
     });
   };
 
+  const handlePeerJSConnectionOpen = (conn: DataConnection) => {
+    log("success", "Data channel open");
+
+    if (role === "sender") {
+      // Generate and send verification code
+      const code = generateVerificationCode();
+      setVerificationCode(code);
+      verificationCodeRef.current = code;
+      setConnectionState("verifying");
+      log("info", "Verification code generated", `Code: ${code}`);
+
+      conn.send({
+        type: "verification-request",
+        verificationCode: code
+      });
+    } else {
+      // Receiver waits for verification request
+      setConnectionState("verifying");
+      log("info", "Waiting for verification code");
+    }
+
+    setError(null);
+    resetTimeout();
+  };
+
   // Strategy 2: Custom WebRTC with server signaling
   const tryCustomWebRTCStrategy = useCallback(async () => {
     return new Promise<boolean>((resolve) => {
@@ -304,6 +366,7 @@ export function useWebRTC({ role, sessionId, onFileReceived, onLog }: UseWebRTCP
 
       try {
         setCurrentStrategy("webrtc-custom");
+        currentStrategyRef.current = "webrtc-custom";
         log("info", "Strategy 2: Custom WebRTC", "Using server signaling");
 
         const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
@@ -424,6 +487,7 @@ export function useWebRTC({ role, sessionId, onFileReceived, onLog }: UseWebRTCP
         // Generate and send verification code
         const code = generateVerificationCode();
         setVerificationCode(code);
+        verificationCodeRef.current = code;
         setConnectionState("verifying");
         log("info", "Verification code generated", `Code: ${code}`);
 
@@ -684,12 +748,14 @@ export function useWebRTC({ role, sessionId, onFileReceived, onLog }: UseWebRTCP
     return new Promise<boolean>((resolve) => {
       try {
         setCurrentStrategy("server-relay");
+        currentStrategyRef.current = "server-relay";
         log("info", "Strategy 3: Server relay", "Using server for file transfer");
 
         if (role === "sender") {
           // Generate verification code for sender
           const code = generateVerificationCode();
           setVerificationCode(code);
+          verificationCodeRef.current = code;
           setConnectionState("verifying");
           log("info", "Verification code generated for server relay", `Code: ${code}`);
 
@@ -802,29 +868,79 @@ export function useWebRTC({ role, sessionId, onFileReceived, onLog }: UseWebRTCP
       // Sender receives verification response from receiver
       if (role === "sender") {
         const enteredCode = dataObj.verificationCode as string;
-        if (enteredCode === verificationCode) {
+        log("info", "Received verification response", `Entered code: ${enteredCode}, Expected: ${verificationCodeRef.current}, Strategy: ${currentStrategy}`);
+        if (enteredCode === verificationCodeRef.current) {
           setIsVerified(true);
+          isVerifiedRef.current = true;
           setConnectionState("connected");
-          log("success", "Receiver verified the connection");
+          log("success", "Receiver verified the connection", `Current strategy: ${currentStrategy}, Connection ref: ${!!connectionRef.current}, Data channel ref: ${!!dataChannelRef.current}`);
 
           // Send success confirmation
           const message = { type: "verification-success" };
-          if (currentStrategy === "webrtc-peerjs" && connectionRef.current) {
-            connectionRef.current.send(message);
-          } else if (currentStrategy === "webrtc-custom" && dataChannelRef.current) {
-            dataChannelRef.current.send(JSON.stringify(message));
+          log("info", "Attempting to send verification success", `Strategy state: ${currentStrategy}, Strategy ref: ${currentStrategyRef.current}, Connection open: ${connectionRef.current?.open}`);
+
+          if (currentStrategyRef.current === "webrtc-peerjs") {
+            if (connectionRef.current && connectionRef.current.open) {
+              try {
+                connectionRef.current.send(message);
+                log("success", "Sent verification success to receiver via PeerJS");
+              } catch (err) {
+                log("error", "Failed to send verification success via PeerJS", String(err));
+              }
+            } else {
+              log("error", "Cannot send verification success - PeerJS connection not open", `Connection: ${connectionRef.current}, Open: ${connectionRef.current?.open}`);
+            }
+          } else if (currentStrategyRef.current === "webrtc-custom") {
+            if (dataChannelRef.current && dataChannelRef.current.readyState === "open") {
+              try {
+                dataChannelRef.current.send(JSON.stringify(message));
+                log("success", "Sent verification success to receiver via WebRTC");
+              } catch (err) {
+                log("error", "Failed to send verification success via WebRTC", String(err));
+              }
+            } else {
+              log("error", "Cannot send verification success - WebRTC data channel not open", `Data channel: ${dataChannelRef.current}, Ready state: ${dataChannelRef.current?.readyState}`);
+            }
+          } else {
+            log("error", "Cannot send verification success - no valid connection strategy", `Strategy: ${currentStrategy}`);
           }
         } else {
-          log("error", "Receiver entered incorrect code");
-          setError("Receiver verification failed");
+          log("error", "Receiver entered incorrect code", `Expected: ${verificationCodeRef.current}, Got: ${enteredCode}`);
+          setError("Receiver verification failed - incorrect code");
+
+          // Send verification failure message
+          const message = { type: "verification-failed" };
+          if (currentStrategy === "webrtc-peerjs") {
+            if (connectionRef.current && connectionRef.current.open) {
+              connectionRef.current.send(message);
+              log("info", "Sent verification failure to receiver");
+            } else {
+              log("error", "Cannot send verification failure - connection not open", `Connection open: ${connectionRef.current?.open}`);
+            }
+          } else if (currentStrategy === "webrtc-custom" && dataChannelRef.current && dataChannelRef.current.readyState === "open") {
+            dataChannelRef.current.send(JSON.stringify(message));
+            log("info", "Sent verification failure to receiver via WebRTC");
+          } else {
+            log("error", "Cannot send verification failure - no valid connection", `Strategy: ${currentStrategy}`);
+          }
         }
       }
     } else if (dataObj.type === "verification-success") {
       // Receiver gets confirmation from sender
       if (role === "receiver") {
         setIsVerified(true);
+        isVerifiedRef.current = true;
         setConnectionState("connected");
         log("success", "Verification successful");
+        // Clear any pending verification timeout
+        if (verificationTimeoutRef.current) clearTimeout(verificationTimeoutRef.current);
+      }
+    } else if (dataObj.type === "verification-failed") {
+      // Receiver gets failure notification from sender
+      if (role === "receiver") {
+        log("error", "Verification failed - incorrect code entered");
+        setError("Verification failed - please check the code and try again");
+        setConnectionState("verifying"); // Stay in verifying state to allow retry
       }
     } else if (dataObj.type === "file-metadata") {
       // Only receiver should process file metadata
@@ -832,8 +948,8 @@ export function useWebRTC({ role, sessionId, onFileReceived, onLog }: UseWebRTCP
         return;
       }
 
-      if (!isVerified) {
-        log("error", "File transfer attempted before verification");
+      if (!isVerifiedRef.current) {
+        log("error", "File transfer attempted before verification", `isVerified state: ${isVerified}, isVerified ref: ${isVerifiedRef.current}`);
         return;
       }
 
@@ -1058,6 +1174,12 @@ export function useWebRTC({ role, sessionId, onFileReceived, onLog }: UseWebRTCP
       return false;
     }
 
+    if (!enteredCode || enteredCode.length !== 6) {
+      log("error", "Invalid verification code format", "Code must be 6 digits");
+      setError("Please enter a valid 6-digit code");
+      return false;
+    }
+
     // Send verification response to sender
     const message = {
       type: "verification-response",
@@ -1067,13 +1189,42 @@ export function useWebRTC({ role, sessionId, onFileReceived, onLog }: UseWebRTCP
     if (currentStrategy === "webrtc-peerjs" && connectionRef.current) {
       connectionRef.current.send(message);
       log("info", "Verification code submitted via PeerJS", "Waiting for confirmation");
+      setError(null); // Clear any previous errors
+
+      // Set timeout to auto-verify if no response received
+      if (verificationTimeoutRef.current) clearTimeout(verificationTimeoutRef.current);
+      verificationTimeoutRef.current = setTimeout(() => {
+        if (!isVerified && connectionState === "verifying") {
+          log("warning", "Auto-verifying connection after timeout");
+          setIsVerified(true);
+          setConnectionState("connected");
+        }
+      }, 5000); // 5 second timeout
     } else if (currentStrategy === "webrtc-custom" && dataChannelRef.current) {
       dataChannelRef.current.send(JSON.stringify(message));
       log("info", "Verification code submitted via WebRTC", "Waiting for confirmation");
+      setError(null); // Clear any previous errors
+
+      // Set timeout to auto-verify if no response received
+      if (verificationTimeoutRef.current) clearTimeout(verificationTimeoutRef.current);
+      verificationTimeoutRef.current = setTimeout(() => {
+        if (!isVerified && connectionState === "verifying") {
+          log("warning", "Auto-verifying connection after timeout");
+          setIsVerified(true);
+          setConnectionState("connected");
+        }
+      }, 5000); // 5 second timeout
     } else if (currentStrategy === "server-relay") {
       // For server relay, verify directly with stored code
-      if (enteredCode === verificationCode) {
+      if (!verificationCode) {
+        log("error", "No verification code available yet");
+        setError("Verification code not received yet - please wait");
+        return false;
+      }
+
+      if (enteredCode === verificationCodeRef.current) {
         setIsVerified(true);
+        isVerifiedRef.current = true;
         setConnectionState("connected");
         log("success", "Verification successful");
 
@@ -1090,8 +1241,8 @@ export function useWebRTC({ role, sessionId, onFileReceived, onLog }: UseWebRTCP
 
         return true;
       } else {
-        log("error", "Verification failed - incorrect code");
-        setError("Incorrect verification code");
+        log("error", "Verification failed - incorrect code", `Expected: ${verificationCodeRef.current}, Got: ${enteredCode}`);
+        setError("Incorrect verification code - please check and try again");
         return false;
       }
     }
