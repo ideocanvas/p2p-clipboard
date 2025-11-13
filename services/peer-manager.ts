@@ -226,10 +226,14 @@ class PeerManager {
   }
 
   private handleIncomingData(data: unknown) {
-    this.log(
-          "info",
-          "Incoming data..."
-        );
+    // Log the actual data structure for debugging
+    if (typeof data === "object" && data !== null) {
+      const dataObj = data as Record<string, unknown>;
+      if (dataObj.type) {
+        this.log("info", `Processing data type: ${dataObj.type}`);
+      }
+    }
+
     if (typeof data !== "object" || data === null) return;
 
     const dataObj = data as Record<string, unknown>;
@@ -304,9 +308,7 @@ class PeerManager {
         this.setConnectionState("verifying"); // Stay in verifying state to allow retry
       }
     } else if (dataObj.type === "file-metadata") {
-      // Only receiver should process file metadata
-      if (this.role !== "receiver") return;
-
+      // Both devices can process file metadata for bidirectional clipboard
       if (!this.isVerified) {
         this.log("error", "File transfer attempted before verification");
         return;
@@ -338,9 +340,7 @@ class PeerManager {
         `${(size / 1024 / 1024).toFixed(2)} MB, ${totalChunks} chunks`
       );
     } else if (dataObj.type === "file-chunk") {
-      // Only receiver should process file chunks
-      if (this.role !== "receiver") return;
-
+      // Both devices can process file chunks for bidirectional clipboard
       const { fileId, chunkIndex, chunk } = dataObj as {
         fileId: string;
         chunkIndex: number;
@@ -375,15 +375,17 @@ class PeerManager {
         );
 
         if (receivedChunks === fileBuffer.metadata.totalChunks) {
-          // Filter out any undefined chunks and create Blob
-          const validChunks = fileBuffer.chunks.filter(chunk => chunk !== undefined);
-          if (validChunks.length !== fileBuffer.metadata.totalChunks) {
-            this.log("error", `Missing chunks: expected ${fileBuffer.metadata.totalChunks}, got ${validChunks.length}`);
-            return;
+          // Check for missing chunks and ensure correct order
+          const orderedChunks: Uint8Array[] = [];
+          for (let i = 0; i < fileBuffer.metadata.totalChunks; i++) {
+            const chunk = fileBuffer.chunks[i];
+            if (chunk === undefined) {
+              this.log("error", `Missing chunk ${i} for file ${fileBuffer.metadata.name}`);
+              return;
+            }
+            orderedChunks.push(chunk);
           }
 
-          // Ensure chunks are in correct order
-          const orderedChunks = fileBuffer.chunks.filter(chunk => chunk !== undefined);
           const completeFile = new Blob(orderedChunks, {
             type: fileBuffer.metadata.type,
           });
@@ -730,10 +732,7 @@ class PeerManager {
   }
 
   submitVerificationCode(enteredCode: string): boolean {
-    if (this.role !== "receiver") {
-      this.log("error", "Only receiver can submit verification code");
-      return false;
-    }
+    // Both devices can submit verification code for bidirectional clipboard
 
     if (!enteredCode || enteredCode.length !== 6) {
       this.log(

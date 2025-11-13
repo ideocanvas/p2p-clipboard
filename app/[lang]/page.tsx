@@ -84,8 +84,19 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
 
       // Store file data in IndexedDB
       for (const item of fileItems) {
-        if (item.data && item.data instanceof File) {
-          await indexedDBStorage.storeFile(item.id, item.data);
+        if (item.data) {
+          let fileToStore: File;
+          if (item.data instanceof File) {
+            fileToStore = item.data;
+          } else if (item.data instanceof Blob) {
+            // Convert Blob to File for storage
+            fileToStore = new File([item.data], item.fileName || 'received-file', {
+              type: item.mimeType || 'application/octet-stream'
+            });
+          } else {
+            continue; // Skip if data is not a File or Blob
+          }
+          await indexedDBStorage.storeFile(item.id, fileToStore);
         }
       }
 
