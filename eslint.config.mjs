@@ -21,6 +21,7 @@ const eslintConfig = [
         Blob: "readonly",
         File: "readonly",
         React: "readonly",
+        localStorage: "readonly",
         // DOM element types
         HTMLDivElement: "readonly",
         HTMLCanvasElement: "readonly",

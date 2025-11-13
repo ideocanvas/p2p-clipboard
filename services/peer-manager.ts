@@ -26,6 +26,7 @@ export interface FileTransfer {
 interface PeerManagerCallbacks {
   onConnectionStateChange: (state: ConnectionState) => void;
   onFileReceived?: (file: Blob, metadata: { name: string; type: string }) => void;
+  onTextReceived?: (text: string) => void;
   onLog?: (log: LogEntry) => void;
 }
 
@@ -649,6 +650,44 @@ class PeerManager {
       this.files = this.files.map((f) =>
         f.status === "transferring" ? { ...f, status: "error" } : f
       );
+    }
+  }
+
+  async sendText(text: string): Promise<void> {
+    if (this.connectionState !== "connected") {
+      this.error = "No active connection. Please verify the connection first.";
+      return;
+    }
+
+    if (!this.isVerified) {
+      this.error = "Connection not verified yet";
+      return;
+    }
+
+    try {
+      this.setConnectionState("transferring");
+      this.log("info", "Sending text content");
+
+      const textData = {
+        type: "text-content",
+        content: text,
+        timestamp: Date.now(),
+      };
+
+      // Send as binary data to avoid JSON size limits for large text
+      const jsonString = JSON.stringify(textData);
+      const binaryData = new TextEncoder().encode(jsonString);
+
+      if (this.connection) {
+        this.connection.send(binaryData);
+        this.log("success", "Text content sent successfully");
+      }
+
+      this.setConnectionState("connected");
+    } catch (err) {
+      this.log("error", "Failed to send text", String(err));
+      this.error = "Failed to send content";
+      throw err;
     }
   }
 

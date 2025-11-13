@@ -1,7 +1,7 @@
 {
 	"$schema": "./node_modules/wrangler/config-schema.json",
 	"main": ".open-next/worker.js",
-	"name": "p2p-file-share",
+	"name": "p2p-clipboard",
 	"compatibility_date": "2025-03-25",
 	"compatibility_flags": [
 		"nodejs_compat"

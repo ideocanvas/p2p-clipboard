@@ -1,5 +1,5 @@
 {
-  "name": "p2p-file-share",
+  "name": "p2p-clipboard",
   "private": true,
   "scripts": {
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
