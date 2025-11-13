@@ -425,8 +425,34 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
                 </div>
               )}
 
-              {/* Verifying */}
-              {connectionState === "verifying" && (
+              {/* Verifying - Sender (generated QR code) shows verification code display */}
+              {connectionState === "verifying" && verificationCode && (
+                <div className="text-center">
+                  <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-6">
+                    <h2 className="text-lg font-bold text-gray-900 mb-4">
+                      {t("common.verificationRequired")}
+                    </h2>
+
+                    <p className="text-gray-600 text-sm mb-4">
+                      {t("clipboard.askOtherDeviceToVerify")}
+                    </p>
+
+                    <div className="mb-4 p-3 bg-white border-2 border-yellow-400 rounded-lg">
+                      <p className="text-xs text-gray-600 mb-1">{t("common.senderVerificationCode")}:</p>
+                      <div className="text-lg font-bold font-mono tracking-widest text-yellow-600">
+                        {verificationCode}
+                      </div>
+                    </div>
+
+                    <p className="text-xs text-gray-600 mt-3">
+                      {t("clipboard.verificationDescription")}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+              {/* Verifying - Receiver (connected via QR code) shows verification input */}
+              {connectionState === "verifying" && !verificationCode && (
                 <div className="text-center">
                   <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-6">
                     <h2 className="text-lg font-bold text-gray-900 mb-4">
@@ -436,15 +462,6 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
                     <p className="text-gray-600 text-sm mb-4">
                       {t("clipboard.enterVerificationCode")}
                     </p>
-
-                    {verificationCode && (
-                      <div className="mb-4 p-3 bg-white border-2 border-yellow-400 rounded-lg">
-                        <p className="text-xs text-gray-600 mb-1">{t("common.senderVerificationCode")}:</p>
-                        <div className="text-lg font-bold font-mono tracking-widest text-yellow-600">
-                          {verificationCode}
-                        </div>
-                      </div>
-                    )}
 
                     <div className="mb-4">
                       <input

@@ -72,6 +72,7 @@
     "registerFailed": "Failed to register short code",
     "verificationFailed": "Verification failed",
     "enter6DigitCode": "Please enter a 6-digit code",
+    "askOtherDeviceToVerify": "Ask the other device to enter this verification code",
     "codePlaceholder": "000000",
     "linkCopied": "Link copied to clipboard!",
     "copyFailed": "Failed to copy link",
