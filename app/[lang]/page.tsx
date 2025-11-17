@@ -420,6 +420,28 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
           setTextContent(detectedContent.content);
         }
 
+        // Auto-send text-based content if connected
+        const textBasedTypes = ['text', 'html', 'code', 'url', 'contact', 'rich-text'];
+        if (textBasedTypes.includes(detectedContent.type) && connectionState === "connected") {
+          try {
+            const peerManager = PeerManager.getInstance();
+            await peerManager.sendText(detectedContent.content, detectedContent.type);
+            handleLog({
+              timestamp: new Date(),
+              level: "success",
+              message: `${detectedContent.type} content automatically sent to connected device`
+            });
+            toast.success(t("clipboard.contentSent"));
+          } catch (sendErr) {
+            handleLog({
+              timestamp: new Date(),
+              level: "error",
+              message: `Failed to automatically send ${detectedContent.type} content`,
+              details: String(sendErr)
+            });
+          }
+        }
+
         handleLog({
           timestamp: new Date(),
           level: "info",
@@ -863,8 +885,8 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
               )}
             </div>
 
-            {/* Connection Logs */}
-            <div className="mt-6">
+            {/* Connection Logs - Desktop */}
+            <div className="mt-6 hidden lg:block">
               <ConnectionLogger logs={logs} maxHeight="300px" />
             </div>
           </div>
@@ -959,6 +981,11 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
               </div>
             </div>
           </div>
+        </div>
+
+        {/* Connection Logs - Mobile */}
+        <div className="mt-6 lg:hidden">
+          <ConnectionLogger logs={logs} maxHeight="300px" />
         </div>
 
         <BuyMeACoffee language={lang === "zh" ? "zh-TW" : "en"} />
