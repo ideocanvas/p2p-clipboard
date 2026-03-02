@@ -29,6 +29,7 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
   const [error, setError] = useState<string | null>(null);
   const [verificationCode, setVerificationCode] = useState<string | null>(null);
   const [isVerified, setIsVerified] = useState(false);
+  const [connectionRole, setConnectionRole] = useState<"sender" | "receiver" | null>(null);
   const [copySuccess, setCopySuccess] = useState(false);
   const [textContent, setTextContent] = useState<string>("");
   const [clipboardHistory, setClipboardHistory] = useState<ClipboardHistoryItemType[]>([]);
@@ -205,7 +206,8 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
     const sessionId = searchParams?.get("session");
 
     if (sessionId) {
-      // We're connecting to an existing device
+      // We're connecting to an existing device - acting as sender
+      setConnectionRole("sender");
       handleLog({ timestamp: new Date(), level: "info", message: "Connecting to existing device via QR code", details: `Session: ${sessionId}` });
 
       const connectWithShortCode = async () => {
@@ -240,6 +242,7 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
       connectWithShortCode();
     } else {
       // We're waiting for connections (acting as receiver)
+      setConnectionRole("receiver");
       peerManager.connect("receiver", "").then((id) => {
         console.log("Waiting for connections with peer ID:", id);
         setPeerId(id);
@@ -661,6 +664,9 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
     if (manualCode.trim()) {
       const peerManager = PeerManager.getInstance();
 
+      // Set role to sender when manually connecting to another device
+      setConnectionRole("sender");
+
       try {
         // Check if manualCode is a short code (6 characters alphanumeric)
         if (manualCode.length === 6 && /^[A-Z0-9]{6}$/i.test(manualCode)) {
@@ -676,6 +682,7 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
           } else {
             handleLog({ timestamp: new Date(), level: "error", message: "Failed to lookup short code", details: data.error });
             setError("Invalid connection code - please check and try again");
+            setConnectionRole(null);
             return;
           }
         } else {
@@ -686,6 +693,7 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
       } catch (err) {
         console.error("Failed to connect:", err);
         setError("Failed to connect to device");
+        setConnectionRole(null);
       }
     }
   };
@@ -799,9 +807,9 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
                 </div>
               )}
 
-              {/* Verifying - Sender (scanned QR code) shows verification code display */}
-              {/* Only show verification code on sender side when there's a session ID (scanning device) */}
-              {connectionState === "verifying" && verificationCode && searchParams?.get("session") && (
+              {/* Verifying - Sender (scanned QR code or entered code manually) shows verification code display */}
+              {/* Show verification code on sender side (the one who initiated the connection) */}
+              {connectionState === "verifying" && verificationCode && connectionRole === "sender" && (
                 <div className="text-center">
                   <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-6">
                     <h2 className="text-lg font-bold text-gray-900 mb-4">
@@ -827,8 +835,8 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
               )}
 
               {/* Verifying - Receiver (generated QR code) shows verification input */}
-              {/* Show verification input on receiver side when there's no session ID */}
-              {connectionState === "verifying" && !searchParams?.get("session") && (
+              {/* Show verification input on receiver side (the one waiting for connections) */}
+              {connectionState === "verifying" && connectionRole === "receiver" && (
                 <div className="text-center">
                   <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-6">
                     <h2 className="text-lg font-bold text-gray-900 mb-4">
