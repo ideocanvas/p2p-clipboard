@@ -14,7 +14,7 @@ import { ClipboardHistoryItem as ClipboardHistoryItemType } from "@/lib/types";
 import PeerManager, { ConnectionState } from "@/services/peer-manager";
 import { ArrowUpDown, ClipboardPaste, Copy, Send, Trash2, Users } from "lucide-react";
 import { useSearchParams } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
 
 export default function ClipboardPage({ params }: { params: Promise<{ lang: string }> }) {
@@ -28,13 +28,12 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
   const [connectionState, setConnectionState] = useState<ConnectionState>("waiting");
   const [error, setError] = useState<string | null>(null);
   const [verificationCode, setVerificationCode] = useState<string | null>(null);
-  const [isVerified, setIsVerified] = useState(false);
   const [copySuccess, setCopySuccess] = useState(false);
   const [textContent, setTextContent] = useState<string>("");
   const [clipboardHistory, setClipboardHistory] = useState<ClipboardHistoryItemType[]>([]);
   const [manualCode, setManualCode] = useState<string>("");
-  const [isDragOver, setIsDragOver] = useState(false);
   const searchParams = useSearchParams();
+  const connectionRoleRef = useRef<"sender" | "receiver">("receiver");
 
   const handleLog = (log: LogEntry) => {
     setLogs((prev) => [...prev, log]);
@@ -186,7 +185,6 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
         const managerState = peerManager.getState();
         setError(managerState.error);
         setVerificationCode(managerState.verificationCode);
-        setIsVerified(managerState.isVerified);
 
         // Update peer ID when available
         if (managerState.peerId && !peerId) {
@@ -220,6 +218,7 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
             if (data.success) {
               handleLog({ timestamp: new Date(), level: "success", message: "Found peer ID from short code", details: `Peer ID: ${data.peerId}` });
               // Connect using the full peer ID
+              connectionRoleRef.current = "sender";
               await peerManager.connect("sender", data.peerId);
             } else {
               handleLog({ timestamp: new Date(), level: "error", message: "Failed to lookup short code", details: data.error });
@@ -229,6 +228,7 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
           } else {
             // Assume it's a full peer ID (backward compatibility)
             handleLog({ timestamp: new Date(), level: "info", message: "Using direct peer ID connection" });
+            connectionRoleRef.current = "sender";
             await peerManager.connect("sender", sessionId);
           }
         } catch (err) {
@@ -240,6 +240,7 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
       connectWithShortCode();
     } else {
       // We're waiting for connections (acting as receiver)
+      connectionRoleRef.current = "receiver";
       peerManager.connect("receiver", "").then((id) => {
         console.log("Waiting for connections with peer ID:", id);
         setPeerId(id);
@@ -677,6 +678,7 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
           if (data.success) {
             handleLog({ timestamp: new Date(), level: "success", message: "Found peer ID from short code", details: `Peer ID: ${data.peerId}` });
             // Connect using the full peer ID
+            connectionRoleRef.current = "sender";
             await peerManager.connect("sender", data.peerId);
           } else {
             handleLog({ timestamp: new Date(), level: "error", message: "Failed to lookup short code", details: data.error });
@@ -686,6 +688,7 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
         } else {
           // Assume it's a full peer ID (backward compatibility)
           handleLog({ timestamp: new Date(), level: "info", message: "Using direct peer ID connection" });
+          connectionRoleRef.current = "sender";
           await peerManager.connect("sender", formattedCode);
         }
       } catch (err) {
@@ -806,7 +809,7 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
 
               {/* Verifying - Sender (scanned QR code) shows verification code display */}
               {/* Only show verification code on sender side when there's a session ID (scanning device) */}
-              {connectionState === "verifying" && verificationCode && searchParams?.get("session") && (
+              {connectionState === "verifying" && verificationCode && (connectionRoleRef.current === "sender" ||searchParams?.get("session")) && (
                 <div className="text-center">
                   <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-6">
                     <h2 className="text-lg font-bold text-gray-900 mb-4">
@@ -833,7 +836,7 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
 
               {/* Verifying - Receiver (generated QR code) shows verification input */}
               {/* Show verification input on receiver side when there's no session ID */}
-              {connectionState === "verifying" && !searchParams?.get("session") && (
+              {connectionState === "verifying" && !searchParams?.get("session") && connectionRoleRef.current !== "sender" && (
                 <div className="text-center">
                   <div className="bg-yellow-50 border-2 border-yellow-300 rounded-lg p-6">
                     <h2 className="text-lg font-bold text-gray-900 mb-4">
