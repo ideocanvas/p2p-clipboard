@@ -661,12 +661,17 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
     if (manualCode.trim()) {
       const peerManager = PeerManager.getInstance();
 
+      // Format the code: short codes (<=6 chars) uppercase, long peer IDs lowercase
+      const formattedCode = manualCode.trim().length <= 6
+        ? manualCode.trim().toUpperCase()
+        : manualCode.trim().toLowerCase();
+
       try {
-        // Check if manualCode is a short code (6 characters alphanumeric)
-        if (manualCode.length === 6 && /^[A-Z0-9]{6}$/i.test(manualCode)) {
+        // Check if formattedCode is a short code (6 characters alphanumeric)
+        if (formattedCode.length === 6 && /^[A-Z0-9]{6}$/.test(formattedCode)) {
           // Lookup peer ID from short code
-          handleLog({ timestamp: new Date(), level: "info", message: "Looking up peer ID from short code", details: `Code: ${manualCode}` });
-          const response = await fetch(`/api/codes?shortCode=${manualCode}`);
+          handleLog({ timestamp: new Date(), level: "info", message: "Looking up peer ID from short code", details: `Code: ${formattedCode}` });
+          const response = await fetch(`/api/codes?shortCode=${formattedCode}`);
           const data = await response.json();
 
           if (data.success) {
@@ -681,7 +686,7 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
         } else {
           // Assume it's a full peer ID (backward compatibility)
           handleLog({ timestamp: new Date(), level: "info", message: "Using direct peer ID connection" });
-          await peerManager.connect("sender", manualCode);
+          await peerManager.connect("sender", formattedCode);
         }
       } catch (err) {
         console.error("Failed to connect:", err);
@@ -783,7 +788,7 @@ export default function ClipboardPage({ params }: { params: Promise<{ lang: stri
                             value={manualCode}
                             onChange={(e) => setManualCode(e.target.value.replace(/[^a-zA-Z0-9]/g, ""))}
                             placeholder="Enter code"
-                            className="flex-1 px-3 py-2 text-center font-mono uppercase border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
+                            className="flex-1 px-3 py-2 text-center font-mono border rounded-lg focus:ring-2 focus:ring-green-500 focus:border-green-500"
                           />
                           <button
                             onClick={handleManualCodeSubmit}

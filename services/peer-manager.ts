@@ -386,7 +386,7 @@ class PeerManager {
             orderedChunks.push(chunk);
           }
 
-          const completeFile = new Blob(orderedChunks, {
+          const completeFile = new Blob(orderedChunks as BlobPart[], {
             type: fileBuffer.metadata.type,
           });
 
@@ -456,6 +456,7 @@ class PeerManager {
 
           // If sender, connect to receiver using the sessionId (which is receiver's peer ID)
           if (role === "sender" && sessionId) {
+            clearTimeout(connectionTimeoutRef);
             setTimeout(() => {
               this.log("info", "Attempting to connect to receiver...");
               const conn = peer.connect(sessionId, {
@@ -489,7 +490,7 @@ class PeerManager {
           } else {
             // Receiver is ready and waiting for connection
             this.log("info", "Receiver ready, waiting for sender connection");
-            resolve(this.peerId!);
+            resolve(this.peerId);
           }
         } else {
           // Wait for peer to open
